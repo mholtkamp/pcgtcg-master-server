@@ -2,16 +2,14 @@ package server;
 
 public class Game
 {
-    public static enum GameStatus
-    {
-        WAITING,
-        INPROGRESS,
-        CLOSED
-    }
+    public static final int WAITING    = 0;
+    public static final int INPROGRESS = 1;
+    public static final int CLOSED     = 2;
+
     public static int nextId = 0;
     public Session host;
     public Session client;
-    public GameStatus status;
+    public int status;
     public int id;
     
     
@@ -20,16 +18,16 @@ public class Game
         host   = null;
         client = null;
         id     = nextId;
-        status = GameStatus.WAITING;
+        status = WAITING;
         nextId++;
     }
     
-    public void setHost(Session host)
+    public synchronized void setHost(Session host)
     {
         this.host = host;
     }
     
-    public void setClient(Session client)
+    public synchronized void setClient(Session client)
     {
         this.client = client;
     }
@@ -42,6 +40,5 @@ public class Game
     public void sendClient(String msg)
     {
         client.write(msg);
-    }
-    
+    }    
 }

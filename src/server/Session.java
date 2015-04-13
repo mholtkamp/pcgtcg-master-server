@@ -16,6 +16,7 @@ public class Session implements Runnable
     public PrintWriter writer;
     public BufferedReader reader;
     public boolean finished;
+    public boolean isHost;
     
     public Session()
     {
@@ -23,6 +24,7 @@ public class Session implements Runnable
         writer   = null;
         reader   = null;
         finished = false;
+        isHost   = false;
     }
     
     public void Set(Socket socket)
@@ -50,8 +52,30 @@ public class Session implements Runnable
             }
             catch (Exception ex)
             {
+                finished = true;
+            }
+        }
+        
+        synchronized(Main.lock)
+        {
+            try
+            {
+                socket.close();
+            }
+            catch (Exception ex)
+            {
                 System.out.println(ex);
             }
+            
+            if (game != null)
+            {
+                if (isHost)
+                    game.setHost(null);
+                else
+                    game.setClient(null);
+            }
+            
+            Main.sessions.remove(this);
         }
     }
     
@@ -66,6 +90,10 @@ public class Session implements Runnable
         if (splitMsg[0].equals("SERVER"))
         {
             processServerMessage(splitMsg[1]);
+        }
+        else if (splitMsg[0].equals("GAME"))
+        {
+            processGameMessage(splitMsg[1]);
         }
     }
     
@@ -105,40 +133,82 @@ public class Session implements Runnable
         }
         else if (command.equals("LIST"))
         {
-            response = "R_LIST.";
-            
-            for (int i = 0; i < Main.games.size(); i++)
+            synchronized (Main.lock)
             {
-                Game game = Main.games.get(i);
-                response += "GAME." +
-                            game.id        + "." + 
-                            game.status    + "." +
-                            game.host.name;
+                response = "R_LIST." + Main.games.size();
+                
+                for (int i = 0; i < Main.games.size(); i++)
+                {
+                    Game game = Main.games.get(i);
+                    response += ".GAME." +
+                                game.id     + "." + 
+                                game.status + "." +
+                                game.host.name;
+                }
+                response += ".END";
+                write(response);
             }
         }
         else if (command.equals("CREATE"))
         {
-            Game newGame = null;
-            ArrayList<Game> games = Main.games;
-            if (games.size() < Main.MAX_GAMES)
+            // Locking for Main.games
+            synchronized(Main.lock)
             {
-                newGame = new Game();
-                this.game = newGame;
-                this.game.setHost(this);
-                write("R_CREATE.SUCCESS");
-            }
-            else
-            {
-                write("R_CREATE.FAILURE");
+                Game newGame = null;
+                ArrayList<Game> games = Main.games;
+                if (games.size() < Main.MAX_GAMES)
+                {
+                    newGame = new Game();
+                    this.game = newGame;
+                    this.game.setHost(this);
+                    this.isHost = true;
+                    games.add(newGame);
+                    write("R_CREATE.SUCCESS");
+                }
+                else
+                {
+                    write("R_CREATE.FAILURE");
+                }
             }
         }
         else if (command.equals("JOIN"))
         {
-            
+            // Locking for Main.games
+            synchronized(Main.lock)
+            {
+                int i = 0;
+                int jid = Integer.parseInt(params);
+                for (i = 0; i < Main.games.size(); i++)
+                {
+                    Game jgame = Main.games.get(i);
+                    if ((jgame.id == jid) &&
+                         jgame.status == Game.WAITING)
+                    {
+                        this.game = jgame;
+                        this.game.setClient(this);
+                        this.game.status = Game.INPROGRESS;
+                        this.isHost = false;
+                        write("R_JOIN.SUCCESS");
+                        write("READY");
+                        game.sendHost("READY");
+                        return;
+                    }
+                }
+                
+                write("R_JOIN.FAILURE");
+            }
         }
         else if (command.equals("SPECTATE"))
         {
-            
+            write("R_SPECTATE.FAILURE");
         }
+    }
+    
+    public void processGameMessage(String msg)
+    {
+        if (isHost)
+            game.sendClient(msg);
+        else
+            game.sendHost(msg);
     }
 }
